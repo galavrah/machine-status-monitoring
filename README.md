@@ -1,84 +1,182 @@
-# Machine Status Monitoring System
+# MQTT Machine Status Monitoring System
 
 ## Overview
-This system provides a comprehensive solution for monitoring machine status across multiple devices in a network. It consists of two main components:
 
-1. **Machine Status Publisher**: A client-side script that collects and sends machine information to a central server.
-2. **Machine Status Server**: A server-side application that receives, stores, and manages machine status data.
+This system provides a robust, scalable solution for monitoring machine status across multiple devices using MQTT (Message Queuing Telemetry Transport) protocol. It consists of three main components:
 
-## Features
-- Collect detailed machine information:
-  - Hostname
-  - IP Address
-  - CPU Model and Usage
-  - Memory Usage
-  - Storage Information
-- Publish machine status at regular intervals
-- Store machine status in a PostgreSQL database
-- RESTful API for retrieving machine statuses
+1. **MQTT Broker**: Mosquitto MQTT broker that manages message routing
+2. **Machine Status Publisher**: Client-side script that collects and publishes machine status
+3. **Machine Status Subscriber**: Server-side script that receives and stores machine status in a database
+
+## Key Features
+
+- Real-time machine status monitoring
+- Lightweight and scalable MQTT architecture
+- Comprehensive system information collection
+- Secure authentication
+- Persistent storage in PostgreSQL database
+
+## Architecture Diagram
+
+```
+[Machine 1]  →  
+[Machine 2]  →   MQTT Broker  →  Subscriber  →  PostgreSQL Database
+[Machine N]  →  
+```
 
 ## Prerequisites
+
 - Ubuntu 20.04 or later
 - Python 3.8+
 - PostgreSQL
-- pip (Python package manager)
+- Mosquitto MQTT Broker
+- Required Python packages (see `requirements.txt`)
 
-## Installation
+## Installation Steps
 
-### Step 1: Clone the Repository
+### 1. Install Dependencies
+
 ```bash
-git clone https://github.com/your-org/machine-status-monitoring.git
-cd machine-status-monitoring
+# Update package lists
+sudo apt-get update
+
+# Install required system packages
+sudo apt-get install -y \
+    python3 \
+    python3-pip \
+    postgresql \
+    mosquitto \
+    mosquitto-clients
+
+# Install Python dependencies
+pip3 install \
+    paho-mqtt \
+    psutil \
+    sqlalchemy \
+    psycopg2-binary \
+    netifaces
 ```
 
-### Step 2: Run Deployment Script
+### 2. Configure MQTT Broker
+
 ```bash
-sudo bash setup_machine_status.sh
+# Set up Mosquitto password
+sudo mosquitto_passwd -c /etc/mosquitto/passwd machine_status
+
+# Configure Mosquitto
+sudo nano /etc/mosquitto/conf.d/default.conf
 ```
 
-The deployment script will:
-- Install system and Python dependencies
-- Setup PostgreSQL database
-- Deploy Machine Status Publisher
-- Deploy Machine Status Server
+Add the following configuration:
+```
+allow_anonymous false
+password_file /etc/mosquitto/passwd
 
-### Configuration
+listener 1883 0.0.0.0
+protocol mqtt
+```
 
-#### Client Configuration
-Edit `/usr/local/bin/machine-status-publisher.py`:
-- Update `SERVER_URL` with your server's address
-- Adjust `PUBLISH_INTERVAL` as needed
+### 3. Setup PostgreSQL Database
 
-#### Server Configuration
-Database connection details are stored in `/etc/machine-status/db.env`
+```bash
+# Create database and user
+sudo -u postgres psql
+```
 
-## API Endpoints
+```sql
+CREATE DATABASE machine_status_db;
+CREATE USER machine_status_user WITH PASSWORD 'your_secure_password';
+GRANT ALL PRIVILEGES ON DATABASE machine_status_db TO machine_status_user;
+```
 
-### POST /machine-status
-- Receive machine status updates
-- Accepts JSON payload with machine information
+### 4. Deploy Scripts
 
-### GET /machine-status
-- Retrieve machine statuses
-- Optional query parameters:
-  - `machine_id`: Filter by specific machine
-  - `limit`: Limit number of results (default 100)
-  - `offset`: Pagination offset (default 0)
+```bash
+# Create installation directory
+sudo mkdir -p /usr/local/bin
+
+# Copy publisher and subscriber scripts
+sudo cp machine-status-publisher.py /usr/local/bin/
+sudo cp machine-status-subscriber.py /usr/local/bin/
+
+# Set executable permissions
+sudo chmod +x /usr/local/bin/machine-status-publisher.py
+sudo chmod +x /usr/local/bin/machine-status-subscriber.py
+```
+
+### 5. Configure Environment
+
+```bash
+# Create configuration directory
+sudo mkdir -p /etc/machine-status
+
+# Store MQTT password
+echo "your_mqtt_password" | sudo tee /etc/machine-status/mqtt_password
+sudo chmod 600 /etc/machine-status/mqtt_password
+
+# Store database connection details
+sudo tee /etc/machine-status/database.env > /dev/null <<EOL
+DATABASE_URL=postgresql://machine_status_user:your_secure_password@localhost/machine_status_db
+MQTT_BROKER_ADDRESS=localhost
+MQTT_BROKER_PORT=1883
+MQTT_USERNAME=machine_status
+MQTT_PASSWORD_FILE=/etc/machine-status/mqtt_password
+EOL
+```
+
+### 6. Install Systemd Services
+
+```bash
+# Copy systemd service files
+sudo cp machine-status-publisher.service /etc/systemd/system/
+sudo cp machine-status-subscriber.service /etc/systemd/system/
+
+# Reload systemd, enable and start services
+sudo systemctl daemon-reload
+sudo systemctl enable machine-status-publisher
+sudo systemctl enable machine-status-subscriber
+sudo systemctl start machine-status-publisher
+sudo systemctl start machine-status-subscriber
+```
+
+## Monitoring and Troubleshooting
+
+### Check Service Status
+```bash
+sudo systemctl status machine-status-publisher
+sudo systemctl status machine-status-subscriber
+```
+
+### View Logs
+```bash
+journalctl -u machine-status-publisher
+journalctl -u machine-status-subscriber
+```
 
 ## Security Considerations
-- Firewall: Allow incoming connections on port 5000
-- Use HTTPS in production
-- Secure database credentials
-- Implement authentication for API endpoints
 
-## Troubleshooting
-- Check service status:
-  ```bash
-  systemctl status machine-status-publisher
-  systemctl status machine-status-server
-  ```
-- View logs:
-  ```bash
-  tail -f /var/log/machine-status-publisher.log
-  tail -f /var/log/machine-status-server.log
-  ```
+- Use strong, unique passwords
+- Configure firewall to restrict access
+- Use TLS for MQTT communication in production
+- Regularly update and patch systems
+
+## Customization
+
+You can customize:
+- Publish interval
+- Collected machine information
+- Database schema
+- MQTT topics
+
+## Scaling
+
+- Multiple publishers can send to the same broker
+- Multiple subscribers can be added for redundancy
+
+## Contributing
+
+Contributions are welcome! Please submit pull requests or open issues.
+
+## License
+
+[Insert your license information]

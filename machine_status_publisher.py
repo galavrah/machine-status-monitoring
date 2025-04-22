@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
+
 import os
 import time
 import json
 import socket
-import requests
 import psutil
 import netifaces
-import glob
+import paho.mqtt.client as mqtt
 import logging
 from typing import Dict, Any
 
@@ -18,16 +18,53 @@ logging.basicConfig(
 )
 
 class MachineStatusPublisher:
-    def __init__(self, server_url: str, publish_interval: int = 60):
+    def __init__(
+        self, 
+        broker_address: str = 'localhost', 
+        broker_port: int = 1883, 
+        username: str = 'machine_status', 
+        password: str = None, 
+        publish_interval: int = 60
+    ):
         """
-        Initialize the Machine Status Publisher
+        Initialize MQTT Machine Status Publisher
         
-        :param server_url: URL of the server endpoint to send machine status
+        :param broker_address: MQTT Broker address
+        :param broker_port: MQTT Broker port
+        :param username: MQTT Broker username
+        :param password: MQTT Broker password
         :param publish_interval: Interval between status updates in seconds
         """
-        self.server_url = server_url
+        self.broker_address = broker_address
+        self.broker_port = broker_port
+        self.username = username
+        self.password = password or self._load_password()
         self.publish_interval = publish_interval
+        
+        # Generate unique machine ID
         self.machine_id = self._get_machine_id()
+        
+        # MQTT Client setup
+        self.client = mqtt.Client(client_id=self.machine_id)
+        self.client.username_pw_set(username, password)
+        
+        # Set up client callbacks
+        self.client.on_connect = self._on_connect
+        self.client.on_publish = self._on_publish
+        self.client.on_disconnect = self._on_disconnect
+
+    def _load_password(self) -> str:
+        """
+        Load MQTT broker password from a secure file
+        
+        :return: MQTT broker password
+        """
+        try:
+            with open('/etc/machine-status/mqtt_password', 'r') as f:
+                return f.read().strip()
+        except Exception as e:
+            logging.error(f"Failed to load MQTT password: {e}")
+            raise
 
     def _get_machine_id(self) -> str:
         """
@@ -36,52 +73,18 @@ class MachineStatusPublisher:
         :return: Unique machine identifier (MAC address)
         """
         try:
-            return self._get_mac_address()
+            # Get MAC address of primary network interface
+            interfaces = netifaces.interfaces()
+            for iface in interfaces:
+                if iface.startswith(('eth', 'wlan', 'en', 'wlp')):
+                    addrs = netifaces.ifaddresses(iface)
+                    if netifaces.AF_LINK in addrs:
+                        return addrs[netifaces.AF_LINK][0]['addr']
         except Exception as e:
-            logging.error(f"Failed to get machine ID: {e}")
-            return socket.gethostname()
-
-    def _get_mac_address(self) -> str:
-        """
-        Get the MAC address of the primary network interface
+            logging.error(f"Failed to get MAC address: {e}")
         
-        :return: MAC address as a string
-        """
-        SCN = "/sys/class/net"
-        min_idx = 65535
-        arphrd_ether = 1
-        ifdev = None
-
-        for dev in glob.glob(os.path.join(SCN, "*")):
-            if not os.path.exists(os.path.join(dev, "type")):
-                continue
-
-            path = os.path.join(dev, "type")
-            with open(path, "r") as type_file:
-                iftype = type_file.read().strip()
-
-            if int(iftype) != arphrd_ether:
-                continue
-
-            # Skip dummy interfaces
-            if "dummy" in dev:
-                continue
-
-            path = os.path.join(dev, "ifindex")
-            with open(path, "r") as ifindex_file:
-                idx = int(ifindex_file.read().strip())
-
-            if idx < min_idx:
-                min_idx = idx
-                ifdev = dev
-
-        if not ifdev:
-            raise Exception("No suitable interfaces found")
-
-        # Grab MAC address
-        path = os.path.join(ifdev, "address")
-        with open(path, "r") as mac_file:
-            return mac_file.read().strip()
+        # Fallback to hostname if MAC address retrieval fails
+        return socket.gethostname()
 
     def _get_machine_info(self) -> Dict[str, Any]:
         """
@@ -108,106 +111,150 @@ class MachineStatusPublisher:
                         return addrs[netifaces.AF_INET][0]['addr']
             return ""
 
-        def get_cpu_info() -> str:
-            """Get CPU model information"""
-            try:
-                with open('/proc/cpuinfo', 'r') as f:
-                    for line in f:
-                        if "model name" in line:
-                            return line.split(':')[1].strip()
-            except Exception:
-                return "Unknown"
-            return "Unknown"
-
-        def get_memory_info() -> str:
-            """Get total memory"""
-            try:
-                total_memory_kb = psutil.virtual_memory().total
-                return f"{total_memory_kb / (1024 ** 3):.2f} GB"
-            except Exception:
-                return "Unknown"
-
-        def get_storage_info() -> Dict[str, Any]:
-            """Get storage information"""
-            try:
-                disk_partitions = psutil.disk_partitions()
-                for partition in disk_partitions:
-                    # You can customize this to check for specific mount points
-                    if partition.mountpoint == '/':
-                        usage = psutil.disk_usage(partition.mountpoint)
-                        return {
-                            "total": {"int": usage.total, "str": format_storage_capacity(usage.total)},
-                            "used": {"int": usage.used, "str": format_storage_capacity(usage.used)},
-                            "free": {"int": usage.free, "str": format_storage_capacity(usage.free)},
-                            "percentage": {"str": f"{usage.percent:.2f}%"}
-                        }
-            except Exception:
-                pass
-            
-            return {
-                "total": {"int": 0, "str": ""},
-                "used": {"int": 0, "str": ""},
-                "free": {"int": 0, "str": ""},
-                "percentage": {"str": ""}
-            }
-
+        # Collect comprehensive system information
         return {
             "machine_id": self.machine_id,
             "hostname": socket.gethostname(),
-            "ip": get_network_info(),
-            "cpu_model": get_cpu_info(),
-            "memory": get_memory_info(),
-            "storage": get_storage_info(),
-            "cpu_usage": f"{psutil.cpu_percent()}%",
-            "memory_usage": f"{psutil.virtual_memory().percent}%",
+            "ip_address": get_network_info(),
+            "cpu": {
+                "model": self._get_cpu_model(),
+                "cores": psutil.cpu_count(),
+                "usage_percent": psutil.cpu_percent()
+            },
+            "memory": {
+                "total": f"{psutil.virtual_memory().total / (1024 ** 3):.2f} GB",
+                "available": f"{psutil.virtual_memory().available / (1024 ** 3):.2f} GB",
+                "usage_percent": psutil.virtual_memory().percent
+            },
+            "storage": {
+                "total": format_storage_capacity(psutil.disk_usage('/').total),
+                "free": format_storage_capacity(psutil.disk_usage('/').free),
+                "usage_percent": psutil.disk_usage('/').percent
+            },
             "timestamp": time.time()
         }
 
-    def publish_status(self) -> bool:
+    def _get_cpu_model(self) -> str:
         """
-        Publish machine status to the server
+        Get CPU model information
         
-        :return: True if successful, False otherwise
+        :return: CPU model as string
         """
         try:
+            with open('/proc/cpuinfo', 'r') as f:
+                for line in f:
+                    if "model name" in line:
+                        return line.split(':')[1].strip()
+        except Exception as e:
+            logging.error(f"Failed to read CPU model: {e}")
+        return "Unknown CPU"
+
+    def _on_connect(self, client, userdata, flags, rc):
+        """
+        MQTT connection callback
+        
+        :param client: MQTT client instance
+        :param userdata: Private user data
+        :param flags: Response flags
+        :param rc: Return code
+        """
+        if rc == 0:
+            logging.info("Connected to MQTT Broker successfully")
+        else:
+            logging.error(f"Failed to connect to MQTT Broker. Return code: {rc}")
+
+    def _on_publish(self, client, userdata, mid):
+        """
+        MQTT message publish callback
+        
+        :param client: MQTT client instance
+        :param userdata: Private user data
+        :param mid: Message ID
+        """
+        logging.info(f"Message {mid} published successfully")
+
+    def _on_disconnect(self, client, userdata, rc):
+        """
+        MQTT disconnection callback
+        
+        :param client: MQTT client instance
+        :param userdata: Private user data
+        :param rc: Return code
+        """
+        logging.warning(f"Disconnected from MQTT Broker. Return code: {rc}")
+        # Attempt to reconnect
+        try:
+            self.client.reconnect()
+        except Exception as e:
+            logging.error(f"Reconnection failed: {e}")
+
+    def publish_status(self):
+        """
+        Publish machine status to MQTT topic
+        """
+        try:
+            # Get current machine information
             machine_info = self._get_machine_info()
-            response = requests.post(
-                self.server_url, 
-                json=machine_info, 
-                timeout=10
-            )
             
-            if response.status_code == 200:
-                logging.info("Machine status published successfully")
-                return True
-            else:
-                logging.error(f"Failed to publish status. Status code: {response.status_code}")
-                return False
-        except requests.RequestException as e:
+            # Convert to JSON
+            payload = json.dumps(machine_info)
+            
+            # Publish to MQTT topic
+            topic = f"machine_status/{self.machine_id}"
+            result = self.client.publish(topic, payload)
+            
+            # Check if publish was successful
+            if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                logging.error(f"Failed to publish message. Error code: {result.rc}")
+        
+        except Exception as e:
             logging.error(f"Error publishing machine status: {e}")
-            return False
 
     def run(self):
         """
-        Continuously publish machine status at specified intervals
+        Run the MQTT machine status publisher
         """
-        logging.info("Machine Status Publisher started")
-        while True:
-            try:
+        try:
+            # Connect to MQTT Broker
+            self.client.connect(self.broker_address, self.broker_port, 60)
+            
+            # Start MQTT loop in background
+            self.client.loop_start()
+            
+            # Publish status periodically
+            while True:
                 self.publish_status()
                 time.sleep(self.publish_interval)
-            except Exception as e:
-                logging.error(f"Unexpected error in publisher: {e}")
-                time.sleep(self.publish_interval)
+        
+        except Exception as e:
+            logging.error(f"Fatal error in publisher: {e}")
+        finally:
+            # Ensure clean disconnection
+            self.client.loop_stop()
+            self.client.disconnect()
 
 def main():
-    # Server URL where machine status will be sent
-    SERVER_URL = 'http://your-server-address.com/machine-status'
+    # Configuration can be loaded from environment or config file
+    BROKER_ADDRESS = os.getenv('MQTT_BROKER_ADDRESS', 'localhost')
+    BROKER_PORT = int(os.getenv('MQTT_BROKER_PORT', 1883))
+    USERNAME = os.getenv('MQTT_USERNAME', 'machine_status')
+    PASSWORD_FILE = os.getenv('MQTT_PASSWORD_FILE', '/etc/machine-status/mqtt_password')
+    PUBLISH_INTERVAL = int(os.getenv('PUBLISH_INTERVAL', 60))
+
+    # Read password from file
+    with open(PASSWORD_FILE, 'r') as f:
+        PASSWORD = f.read().strip()
+
+    # Create and run publisher
+    publisher = MachineStatusPublisher(
+        broker_address=BROKER_ADDRESS,
+        broker_port=BROKER_PORT,
+        username=USERNAME,
+        password=PASSWORD,
+        publish_interval=PUBLISH_INTERVAL
+    )
     
-    # Interval between status updates (in seconds)
-    PUBLISH_INTERVAL = 60  # 1 minute
-    
-    publisher = MachineStatusPublisher(SERVER_URL, PUBLISH_INTERVAL)
+    # Run the publisher
     publisher.run()
 
 if __name__ == "__main__":

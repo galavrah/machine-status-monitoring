@@ -1,11 +1,12 @@
+# Machine Status Publisher Service
 [Unit]
-Description=Machine Status Publisher Service
-After=network.target
+Description=Machine Status MQTT Publisher
+After=network.target mosquitto.service
 
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/machine-status-publisher.py
+ExecStart=/usr/bin/python3 /usr/local/bin/machine-status-publisher.py
 Restart=on-failure
 RestartSec=10
 
