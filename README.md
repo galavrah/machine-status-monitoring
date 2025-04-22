@@ -27,7 +27,7 @@ This system provides a comprehensive solution for monitoring machine status acro
 
 ### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/your-org/machine-status-monitoring.git
+git clone https://github.com/galavrah/machine-status-monitoring.git
 cd machine-status-monitoring
 ```
 
