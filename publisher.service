@@ -1,0 +1,13 @@
+[Unit]
+Description=Machine Status Publisher Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/machine-status-publisher.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
