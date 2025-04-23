@@ -772,6 +772,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 SUBSCRIBER_SCRIPT
 
     # Set correct permissions
@@ -779,21 +780,24 @@ SUBSCRIBER_SCRIPT
     
     # Create systemd service for subscriber
     sudo tee /etc/systemd/system/machine-status-subscriber.service > /dev/null <<EOL
-[Unit]
-Description=Machine Status MQTT Subscriber
-After=network.target mosquitto.service postgresql.service
+        [Unit]
+        Description=Machine Status MQTT Subscriber
+        After=network.target mosquitto.service postgresql.service
 
-[Service]
-Type=simple
-User=root
-EnvironmentFile=/etc/machine-status/mqtt.env
-EnvironmentFile=/etc/machine-status/db.env
-ExecStart=/opt/machine-status/venv/bin/python3 /opt/machine-status/subscriber/machine_status_subscriber.py
-Restart=on-failure
-RestartSec=10
+        [Service]
+        Type=simple
+        User=root
+        EnvironmentFile=/etc/machine-status/mqtt.env
+        EnvironmentFile=/etc/machine-status/db.env
+        ExecStart=/opt/machine-status/venv/bin/python3 /opt/machine-status/subscriber/machine_status_subscriber.py
+        Restart=on-failure
+        RestartSec=10
+        WorkingDirectory=/opt/machine-status
+        StandardOutput=journal
+        StandardError=journal
 
-[Install]
-WantedBy=multi-user.target
+        [Install]
+        WantedBy=multi-user.target
 EOL
 
     # Reload systemd, enable and start service
@@ -821,8 +825,8 @@ install_client() {
         sudo tee /etc/machine-status/mqtt.env > /dev/null <<EOL
 MQTT_BROKER_ADDRESS=${MQTT_BROKER_ADDRESS}
 MQTT_BROKER_PORT=${MQTT_BROKER_PORT}
-MQTT_USERNAME=
-MQTT_PASSWORD=
+MQTT_USERNAME=machine_status_user
+MQTT_PASSWORD=123456
 EOL
         sudo chmod 600 /etc/machine-status/mqtt.env
     fi

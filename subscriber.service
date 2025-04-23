@@ -1,4 +1,3 @@
-# Machine Status Subscriber Service
 [Unit]
 Description=Machine Status MQTT Subscriber
 After=network.target mosquitto.service postgresql.service
@@ -6,10 +5,15 @@ After=network.target mosquitto.service postgresql.service
 [Service]
 Type=simple
 User=root
-EnvironmentFile=/etc/machine-status/database.env
-ExecStart=/usr/bin/python3 /usr/local/bin/machine-status-subscriber.py
+EnvironmentFile=/etc/machine-status/mqtt.env
+EnvironmentFile=/etc/machine-status/db.env
+ExecStart=/opt/machine-status/venv/bin/python3 /opt/machine-status/subscriber/machine_status_subscriber.py
 Restart=on-failure
 RestartSec=10
+WorkingDirectory=/opt/machine-status
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
+EOL
