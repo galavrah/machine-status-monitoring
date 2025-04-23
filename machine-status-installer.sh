@@ -30,6 +30,41 @@ PROXY_PORT="${PROXY_PORT:-912}"
 MQTT_BROKER_ADDRESS="${MQTT_BROKER_ADDRESS:-localhost}"
 MQTT_BROKER_PORT="${MQTT_BROKER_PORT:-1883}"
 
+
+# Detect Linux distribution
+detect_distribution() {
+    # Check if /etc/os-release exists (standard for modern Linux distributions)
+    if [ -f /etc/os-release ]; then
+        # Source the file to get distribution information
+        . /etc/os-release
+        
+        # Set distribution variables
+        DISTRO=$ID          # e.g., ubuntu, fedora, debian
+        DISTRO_VERSION=$VERSION_ID  # e.g., 20.04, 22.04
+        
+        log "Detected Distribution: ${DISTRO} ${DISTRO_VERSION}"
+    else
+        # Fallback for older systems
+        if [ -f /etc/lsb-release ]; then
+            . /etc/lsb-release
+            DISTRO=$DISTRIB_ID
+            DISTRO_VERSION=$DISTRIB_RELEASE
+        elif [ -f /etc/redhat-release ]; then
+            DISTRO=$(cat /etc/redhat-release | cut -d' ' -f1)
+            DISTRO_VERSION=$(cat /etc/redhat-release | cut -d' ' -f3)
+        else
+            error "Unable to detect Linux distribution"
+            return 1
+        fi
+        
+        log "Detected Distribution: ${DISTRO} ${DISTRO_VERSION}"
+    fi
+    
+    # Export variables for use in other functions
+    export DISTRO
+    export DISTRO_VERSION
+}
+
 # Previous functions (detect_distribution, configure_system_proxy, 
 # install_common_dependencies, install_python_dependencies, 
 # install_mqtt_broker, configure_mqtt_broker, install_machine_status_publisher) 
