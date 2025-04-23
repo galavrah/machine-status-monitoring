@@ -148,7 +148,7 @@ configure_mqtt_broker() {
     
     # Generate random MQTT password
     MQTT_USER="machine_status"
-    MQTT_PASS=$(openssl rand -base64 16)
+    MQTT_PASS="123456"
     
     # Create configuration directory
     sudo mkdir -p /etc/machine-status
@@ -166,9 +166,16 @@ EOL
     sudo tee /etc/mosquitto/conf.d/machine-status.conf > /dev/null <<EOL
 # Machine Status MQTT Configuration
 listener ${MQTT_BROKER_PORT}
+allow_anonymous true
+EOL
+
+    # Only add password file if we actually created one
+    if [ -f "/etc/mosquitto/passwd" ]; then
+        sudo tee -a /etc/mosquitto/conf.d/machine-status.conf > /dev/null <<EOL
 allow_anonymous false
 password_file /etc/mosquitto/passwd
 EOL
+    fi
     
     # Create MQTT user and password
     sudo touch /etc/mosquitto/passwd
@@ -185,8 +192,14 @@ EOL
 install_machine_status_publisher() {
     log "Installing Machine Status Publisher..."
     
-    # Create installation directory
+    # Create installation directory and ensure log directory exists
     sudo mkdir -p /opt/machine-status/publisher
+    sudo mkdir -p /var/log
+    sudo touch /var/log/machine-status-publisher.log
+    sudo chmod 644 /var/log/machine-status-publisher.log
+    
+    # Create machine ID directory
+    sudo mkdir -p /etc/machine-status
     
     # Copy publisher script
     sudo tee /opt/machine-status/publisher/machine_status_publisher.py > /dev/null <<'PUBLISHER_SCRIPT'
@@ -450,15 +463,18 @@ PUBLISHER_SCRIPT
     sudo tee /etc/systemd/system/machine-status-publisher.service > /dev/null <<EOL
 [Unit]
 Description=Machine Status MQTT Publisher
-After=network.target mosquitto.service
+After=network.target
 
 [Service]
 Type=simple
 User=root
-EnvironmentFile=/etc/machine-status/mqtt.env
+EnvironmentFile=-/etc/machine-status/mqtt.env
 ExecStart=/opt/machine-status/venv/bin/python3 /opt/machine-status/publisher/machine_status_publisher.py
 Restart=on-failure
 RestartSec=10
+WorkingDirectory=/opt/machine-status
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -786,7 +802,7 @@ EOL
     sudo systemctl start machine-status-subscriber
 }
 
-# Install client components
+    # Install client components
 install_client() {
     log "Setting up Machine Status Client..."
     
@@ -799,10 +815,23 @@ install_client() {
     # Install Python dependencies
     install_python_dependencies
     
+    # Create empty mqtt.env file if it doesn't exist
+    sudo mkdir -p /etc/machine-status
+    if [ ! -f "/etc/machine-status/mqtt.env" ]; then
+        sudo tee /etc/machine-status/mqtt.env > /dev/null <<EOL
+MQTT_BROKER_ADDRESS=${MQTT_BROKER_ADDRESS}
+MQTT_BROKER_PORT=${MQTT_BROKER_PORT}
+MQTT_USERNAME=
+MQTT_PASSWORD=
+EOL
+        sudo chmod 600 /etc/machine-status/mqtt.env
+    fi
+    
     # Install Machine Status Publisher
     install_machine_status_publisher
     
     log "Machine Status Client setup complete!"
+    log "You may need to edit /etc/machine-status/mqtt.env to set the correct broker address."
 }
 
 # Main installation function
