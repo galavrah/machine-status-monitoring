@@ -192,28 +192,51 @@ class MachineStatusSubscriber:
             self.client.disconnect()
 
 def main():
-    # Configuration from environment variables or defaults
-    BROKER_ADDRESS = os.getenv('MQTT_BROKER_ADDRESS', 'localhost')
-    BROKER_PORT = int(os.getenv('MQTT_BROKER_PORT', 1883))
-    USERNAME = os.getenv('MQTT_USERNAME', 'machine_status')
-    PASSWORD_FILE = os.getenv('MQTT_PASSWORD_FILE', '/etc/machine-status/mqtt_password')
-    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://username:password@localhost/machine_status_db')
-
-    # Read password from file
-    try:
-        with open(PASSWORD_FILE, 'r') as f:
-            PASSWORD = f.read().strip()
-    except Exception as e:
-        logging.error(f"Failed to read password file: {e}")
-        PASSWORD = None
-
+    # Configuration defaults 
+    database_url = None
+    
+    # Try to load database configuration from environment file
+    db_env_file = '/etc/machine-status/db.env'
+    if os.path.exists(db_env_file):
+        try:
+            with open(db_env_file, 'r') as f:
+                for line in f:
+                    if '=' in line and line.startswith('DATABASE_URL'):
+                        _, database_url = line.strip().split('=', 1)
+                        break
+        except Exception as e:
+            logging.error(f"Error reading database config: {e}")
+    
+    # If no database configuration was found, check for environment variables
+    if not database_url:
+        database_url = os.getenv('DATABASE_URL')
+    
+    # If still no database configuration, prompt for credentials
+    if not database_url:
+        print("No database configuration found. Please enter database credentials:")
+        db_user = input("Database username: ")
+        db_pass = input("Database password: ")
+        db_name = input("Database name [machine_status_db]: ") or "machine_status_db"
+        db_host = input("Database host [localhost]: ") or "localhost"
+        database_url = f"postgresql://{db_user}:{db_pass}@{db_host}/{db_name}"
+    
+    # Get MQTT configuration
+    broker_address = os.getenv('MQTT_BROKER_ADDRESS', 'localhost')
+    broker_port = int(os.getenv('MQTT_BROKER_PORT', 1883))
+    username = os.getenv('MQTT_USERNAME', 'machine_status_user')
+    password = os.getenv('MQTT_PASSWORD', '123456')
+    
+    # Print configuration (without password)
+    print(f"Using database: {database_url.split(':')[0]}://{database_url.split(':')[1].split('@')[0]}:***@{database_url.split('@')[1]}")
+    print(f"Using MQTT broker: {broker_address}:{broker_port}")
+    
     # Create and run subscriber
     subscriber = MachineStatusSubscriber(
-        broker_address=BROKER_ADDRESS,
-        broker_port=BROKER_PORT,
-        username=USERNAME,
-        password=PASSWORD,
-        database_url=DATABASE_URL
+        broker_address=broker_address,
+        broker_port=broker_port,
+        username=username,
+        password=password,
+        database_url=database_url
     )
     
     # Run the subscriber
