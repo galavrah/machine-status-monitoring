@@ -1,35 +1,66 @@
 #!/bin/bash
 
-# MQTT Broker Installation Script for Ubuntu
+# Flexible MQTT Broker Installation Script with Proxy Support
 
 set -e
 
-# Function to install Mosquitto MQTT Broker
+# Proxy configuration
+PROXY_HOST="proxy.iil.intel.com"
+PROXY_PORT="912"
+
+# Function to install Mosquitto with proxy support
 install_mosquitto() {
     echo "Installing Mosquitto MQTT Broker..."
     
-    # Import Mosquitto repository key
-    wget -q -O - https://mosquitto.org/repos/apt/debian.key | sudo apt-key add -
-    
-    # Add Mosquitto repository
-    sudo add-apt-repository "deb https://mosquitto.org/repos/apt $(lsb_release -cs) main"
-    
-    # Update package lists
+    # Install required packages
     sudo apt-get update
+    sudo apt-get install -y \
+        ca-certificates \
+        curl \
+        gnupg \
+        software-properties-common
+
+    # Attempt to download GPG key with proxy
+    echo "Downloading Mosquitto GPG key..."
     
-    # Install Mosquitto broker and clients
+    # Try multiple methods to fetch the key
+    MOSQUITTO_KEY_URL="https://mosquitto.org/files/gpg.key"
+    
+    # Method 1: curl with proxy
+    if curl -v -x "http://${PROXY_HOST}:${PROXY_PORT}" "${MOSQUITTO_KEY_URL}" -o mosquitto.gpg.key; then
+        echo "Key downloaded via curl with proxy"
+    elif curl -v "${MOSQUITTO_KEY_URL}" -o mosquitto.gpg.key; then
+        echo "Key downloaded via direct curl"
+    else
+        echo "Failed to download Mosquitto GPG key"
+        exit 1
+    fi
+
+    # Verify and add the key
+    if gpg --dry-run --import mosquitto.gpg.key; then
+        # Convert and store the key
+        cat mosquitto.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/mosquitto-archive-keyring.gpg
+    else
+        echo "Invalid GPG key"
+        exit 1
+    fi
+
+    # Add repository with the new key method
+    echo "deb [signed-by=/usr/share/keyrings/mosquitto-archive-keyring.gpg] https://mosquitto.org/repos/apt $(lsb_release -cs) main" | \
+        sudo tee /etc/apt/sources.list.d/mosquitto.list
+
+    # Update and install
+    sudo apt-get update
     sudo apt-get install -y mosquitto mosquitto-clients
-    
-    # Enable Mosquitto to start on boot
+
+    # Enable and start service
     sudo systemctl enable mosquitto
-    
-    # Configure basic security
-    configure_mosquitto_security
-    
-    # Start Mosquitto service
     sudo systemctl start mosquitto
-    
-    echo "Mosquitto MQTT Broker installed and configured!"
+
+    # Clean up key file
+    rm -f mosquitto.gpg.key
+
+    echo "Mosquitto MQTT Broker installed successfully!"
 }
 
 # Function to configure Mosquitto security
@@ -48,12 +79,6 @@ password_file /etc/mosquitto/passwd
 # Listener configuration
 listener 1883 0.0.0.0
 protocol mqtt
-
-# Optional TLS configuration (recommended for production)
-# listener 8883
-# cafile /path/to/ca.crt
-# certfile /path/to/server.crt
-# keyfile /path/to/server.key
 EOL
 
     # Set proper permissions
@@ -72,8 +97,20 @@ main() {
        exit 1
     fi
 
+    # Set proxy for apt if needed
+    if [ -n "$PROXY_HOST" ] && [ -n "$PROXY_PORT" ]; then
+        echo "Configuring proxy for apt..."
+        sudo tee /etc/apt/apt.conf.d/proxy.conf > /dev/null <<EOL
+Acquire::http::Proxy "http://${PROXY_HOST}:${PROXY_PORT}";
+Acquire::https::Proxy "http://${PROXY_HOST}:${PROXY_PORT}";
+EOL
+    fi
+
     # Install Mosquitto
     install_mosquitto
+    
+    # Configure security
+    configure_mosquitto_security
 }
 
 # Run main function

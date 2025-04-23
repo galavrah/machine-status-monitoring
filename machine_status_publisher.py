@@ -6,7 +6,6 @@ import json
 import socket
 import psutil
 import netifaces
-import paho.mqtt.client as mqtt
 import logging
 from typing import Dict, Any
 
@@ -20,50 +19,36 @@ logging.basicConfig(
 class MachineStatusPublisher:
     def __init__(
         self, 
-        broker_address: str = 'localhost', 
-        broker_port: int = 1883, 
-        username: str = 'machine_status', 
-        password: str = None, 
+        database_url: str = None,
         publish_interval: int = 60
     ):
         """
-        Initialize MQTT Machine Status Publisher
+        Initialize Machine Status Publisher
         
-        :param broker_address: MQTT Broker address
-        :param broker_port: MQTT Broker port
-        :param username: MQTT Broker username
-        :param password: MQTT Broker password
+        :param database_url: Database connection URL
         :param publish_interval: Interval between status updates in seconds
         """
-        self.broker_address = broker_address
-        self.broker_port = broker_port
-        self.username = username
-        self.password = password or self._load_password()
         self.publish_interval = publish_interval
+        
+        # Load database connection details
+        self.database_url = database_url or self._load_database_url()
         
         # Generate unique machine ID
         self.machine_id = self._get_machine_id()
-        
-        # MQTT Client setup
-        self.client = mqtt.Client(client_id=self.machine_id)
-        self.client.username_pw_set(username, password)
-        
-        # Set up client callbacks
-        self.client.on_connect = self._on_connect
-        self.client.on_publish = self._on_publish
-        self.client.on_disconnect = self._on_disconnect
 
-    def _load_password(self) -> str:
+    def _load_database_url(self) -> str:
         """
-        Load MQTT broker password from a secure file
+        Load database connection URL from environment file
         
-        :return: MQTT broker password
+        :return: Database connection URL
         """
         try:
-            with open('/etc/machine-status/mqtt_password', 'r') as f:
-                return f.read().strip()
+            with open('/etc/machine-status/db.env', 'r') as f:
+                for line in f:
+                    if line.startswith('DATABASE_URL='):
+                        return line.split('=', 1)[1].strip()
         except Exception as e:
-            logging.error(f"Failed to load MQTT password: {e}")
+            logging.error(f"Failed to load database URL: {e}")
             raise
 
     def _get_machine_id(self) -> str:
@@ -111,13 +96,24 @@ class MachineStatusPublisher:
                         return addrs[netifaces.AF_INET][0]['addr']
             return ""
 
+        def get_cpu_model() -> str:
+            """Get CPU model information"""
+            try:
+                with open('/proc/cpuinfo', 'r') as f:
+                    for line in f:
+                        if "model name" in line:
+                            return line.split(':')[1].strip()
+            except Exception as e:
+                logging.error(f"Failed to read CPU model: {e}")
+            return "Unknown CPU"
+
         # Collect comprehensive system information
         return {
             "machine_id": self.machine_id,
             "hostname": socket.gethostname(),
             "ip_address": get_network_info(),
             "cpu": {
-                "model": self._get_cpu_model(),
+                "model": get_cpu_model(),
                 "cores": psutil.cpu_count(),
                 "usage_percent": psutil.cpu_percent()
             },
@@ -134,92 +130,28 @@ class MachineStatusPublisher:
             "timestamp": time.time()
         }
 
-    def _get_cpu_model(self) -> str:
-        """
-        Get CPU model information
-        
-        :return: CPU model as string
-        """
-        try:
-            with open('/proc/cpuinfo', 'r') as f:
-                for line in f:
-                    if "model name" in line:
-                        return line.split(':')[1].strip()
-        except Exception as e:
-            logging.error(f"Failed to read CPU model: {e}")
-        return "Unknown CPU"
-
-    def _on_connect(self, client, userdata, flags, rc):
-        """
-        MQTT connection callback
-        
-        :param client: MQTT client instance
-        :param userdata: Private user data
-        :param flags: Response flags
-        :param rc: Return code
-        """
-        if rc == 0:
-            logging.info("Connected to MQTT Broker successfully")
-        else:
-            logging.error(f"Failed to connect to MQTT Broker. Return code: {rc}")
-
-    def _on_publish(self, client, userdata, mid):
-        """
-        MQTT message publish callback
-        
-        :param client: MQTT client instance
-        :param userdata: Private user data
-        :param mid: Message ID
-        """
-        logging.info(f"Message {mid} published successfully")
-
-    def _on_disconnect(self, client, userdata, rc):
-        """
-        MQTT disconnection callback
-        
-        :param client: MQTT client instance
-        :param userdata: Private user data
-        :param rc: Return code
-        """
-        logging.warning(f"Disconnected from MQTT Broker. Return code: {rc}")
-        # Attempt to reconnect
-        try:
-            self.client.reconnect()
-        except Exception as e:
-            logging.error(f"Reconnection failed: {e}")
-
     def publish_status(self):
         """
-        Publish machine status to MQTT topic
+        Publish machine status to database or logging
         """
         try:
             # Get current machine information
             machine_info = self._get_machine_info()
             
-            # Convert to JSON
-            payload = json.dumps(machine_info)
+            # Log the information
+            logging.info(f"Machine Status: {json.dumps(machine_info, indent=2)}")
             
-            # Publish to MQTT topic
-            topic = f"machine_status/{self.machine_id}"
-            result = self.client.publish(topic, payload)
-            
-            # Check if publish was successful
-            if result.rc != mqtt.MQTT_ERR_SUCCESS:
-                logging.error(f"Failed to publish message. Error code: {result.rc}")
+            # TODO: Add database insertion logic here if needed
         
         except Exception as e:
             logging.error(f"Error publishing machine status: {e}")
 
     def run(self):
         """
-        Run the MQTT machine status publisher
+        Run the machine status publisher
         """
         try:
-            # Connect to MQTT Broker
-            self.client.connect(self.broker_address, self.broker_port, 60)
-            
-            # Start MQTT loop in background
-            self.client.loop_start()
+            logging.info("Starting Machine Status Publisher")
             
             # Publish status periodically
             while True:
@@ -228,29 +160,15 @@ class MachineStatusPublisher:
         
         except Exception as e:
             logging.error(f"Fatal error in publisher: {e}")
-        finally:
-            # Ensure clean disconnection
-            self.client.loop_stop()
-            self.client.disconnect()
 
 def main():
-    # Configuration can be loaded from environment or config file
-    BROKER_ADDRESS = os.getenv('MQTT_BROKER_ADDRESS', 'localhost')
-    BROKER_PORT = int(os.getenv('MQTT_BROKER_PORT', 1883))
-    USERNAME = os.getenv('MQTT_USERNAME', 'machine_status')
-    PASSWORD_FILE = os.getenv('MQTT_PASSWORD_FILE', '/etc/machine-status/mqtt_password')
+    # Configuration from environment or defaults
     PUBLISH_INTERVAL = int(os.getenv('PUBLISH_INTERVAL', 60))
-
-    # Read password from file
-    with open(PASSWORD_FILE, 'r') as f:
-        PASSWORD = f.read().strip()
+    DATABASE_URL = os.getenv('DATABASE_URL')
 
     # Create and run publisher
     publisher = MachineStatusPublisher(
-        broker_address=BROKER_ADDRESS,
-        broker_port=BROKER_PORT,
-        username=USERNAME,
-        password=PASSWORD,
+        database_url=DATABASE_URL,
         publish_interval=PUBLISH_INTERVAL
     )
     
