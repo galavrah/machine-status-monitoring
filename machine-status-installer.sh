@@ -373,6 +373,29 @@ EOL
     sudo systemctl start machine-status-subscriber
 }
 
+install_client() {
+    log "Setting up Machine Status Client..."
+    
+    # Configure system proxy
+    configure_system_proxy
+    
+    # Install common dependencies
+    install_common_dependencies
+    
+    # Install Python dependencies
+    install_python_dependencies
+    
+    # Install and configure MQTT Broker
+    install_mqtt_broker
+    configure_mqtt_broker
+    
+    # Install Machine Status Publisher
+    install_machine_status_publisher
+    
+    log "Machine Status Client setup complete!"
+}
+
+
 # Main installation function
 main() {
     # Check for root privileges
