@@ -533,9 +533,11 @@ EOL
 install_server() {
     log "Installing Machine Status Server..."
     
-    # Install MQTT broker
+    # Install Mosquitto MQTT broker from standard repositories
+    log "Installing MQTT broker (Mosquitto)..."
     if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
         sudo apt-get update
+        # Install directly from standard repositories
         sudo apt-get install -y mosquitto mosquitto-clients
     elif [ "$DISTRO" = "fedora" ] || [ "$DISTRO" = "centos" ] || [ "$DISTRO" = "rhel" ]; then
         sudo dnf install -y mosquitto
