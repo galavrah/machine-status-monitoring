@@ -166,7 +166,7 @@ install_client() {
 MQTT_BROKER_ADDRESS=${MQTT_BROKER_ADDRESS}
 MQTT_BROKER_PORT=${MQTT_BROKER_PORT}
 MQTT_USERNAME=machine_status
-MQTT_PASSWORD=machine_status
+MQTT_PASSWORD=123456
 PUBLISH_INTERVAL=${PUBLISH_INTERVAL}
 EOL
     
@@ -204,8 +204,8 @@ class MachineStatusPublisher:
         self, 
         mqtt_broker_address: str = 'localhost', 
         mqtt_broker_port: int = 1883, 
-        mqtt_username: str = '', 
-        mqtt_password: str = None,
+        mqtt_username: str = 'machine_status', 
+        mqtt_password: str = 123456,
         machine_id: str = None,
         publish_interval: int = 5  # Default to 5 seconds
     ):
@@ -483,8 +483,8 @@ def main():
     publisher = MachineStatusPublisher(
         mqtt_broker_address=mqtt_config.get('MQTT_BROKER_ADDRESS', 'localhost'),
         mqtt_broker_port=int(mqtt_config.get('MQTT_BROKER_PORT', 1883)),
-        mqtt_username=mqtt_config.get('MQTT_USERNAME', ''),
-        mqtt_password=mqtt_config.get('MQTT_PASSWORD', ''),
+        mqtt_username=mqtt_config.get('MQTT_USERNAME', 'machine_status'),
+        mqtt_password=mqtt_config.get('MQTT_PASSWORD', '123456'),
         publish_interval=publish_interval
     )
     
@@ -597,7 +597,7 @@ EOL
 MQTT_BROKER_ADDRESS=localhost
 MQTT_BROKER_PORT=${MQTT_BROKER_PORT}
 MQTT_USERNAME=machine_status
-MQTT_PASSWORD=machine_status
+MQTT_PASSWORD=123456
 OFFLINE_THRESHOLD=${OFFLINE_THRESHOLD}
 EOL
     
@@ -973,8 +973,8 @@ def main():
     # Get MQTT configuration
     broker_address = mqtt_config.get('MQTT_BROKER_ADDRESS', 'localhost')
     broker_port = int(mqtt_config.get('MQTT_BROKER_PORT', 1883))
-    username = mqtt_config.get('MQTT_USERNAME', '')
-    password = mqtt_config.get('MQTT_PASSWORD', '')
+    username = mqtt_config.get('MQTT_USERNAME', 'machine_status')
+    password = mqtt_config.get('MQTT_PASSWORD', '123456')
     
     print(f"Starting subscriber on {broker_address}:{broker_port}")
     print(f"Using database: {database_url if database_url else 'Not configured'}")
@@ -1200,8 +1200,8 @@ def monitor_loop(stdscr):
     # Connect to broker
     broker_address = mqtt_config.get('MQTT_BROKER_ADDRESS', 'localhost')
     broker_port = int(mqtt_config.get('MQTT_BROKER_PORT', 1883))
-    username = mqtt_config.get('MQTT_USERNAME', '')
-    password = mqtt_config.get('MQTT_PASSWORD', '')
+    username = mqtt_config.get('MQTT_USERNAME', 'machine_status')
+    password = mqtt_config.get('MQTT_PASSWORD', '123456')
     
     if username and password:
         client.username_pw_set(username, password)
