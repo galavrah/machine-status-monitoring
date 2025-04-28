@@ -31,7 +31,7 @@ A comprehensive system for monitoring machine status across your network using M
 
 ```bash
 # Download the installer
-wget -O machine-status-unified-installer.sh https://example.com/machine-status-unified-installer.sh
+wget -O machine-status-unified-installer.sh https://raw.githubusercontent.com/galavrah/machine-status-monitoring/refs/heads/main/machine-status-unified-installer.sh
 chmod +x machine-status-unified-installer.sh
 
 # Run the installer in server mode
@@ -42,11 +42,11 @@ sudo ./machine-status-unified-installer.sh server
 
 ```bash
 # Download the installer
-wget -O machine-status-unified-installer.sh https://example.com/machine-status-unified-installer.sh
+wget -O machine-status-unified-installer.sh https://raw.githubusercontent.com/galavrah/machine-status-monitoring/refs/heads/main/machine-status-unified-installer.sh
 chmod +x machine-status-unified-installer.sh
 
 # Run the installer in client mode, specifying the server IP
-sudo ./machine-status-unified-installer.sh client --ip=192.168.1.100
+sudo ./machine-status-unified-installer.sh client --ip=143.185.122.70
 ```
 
 ### Advanced Installation Options
@@ -56,7 +56,7 @@ sudo ./machine-status-unified-installer.sh client --ip=192.168.1.100
 sudo ./machine-status-unified-installer.sh server --port=8883 --offline-threshold=30
 
 # Client with custom publishing interval
-sudo ./machine-status-unified-installer.sh client --ip=192.168.1.100 --interval=10
+sudo ./machine-status-unified-installer.sh client --ip=143.185.122.70 --interval=10
 ```
 
 ## Using the Multi-Machine Subscriber
@@ -70,10 +70,10 @@ The `simple_multi_machine_subscriber.py` script provides a lightweight way to mo
 python3 simple_multi_machine_subscriber.py
 
 # Specify broker address and port
-python3 simple_multi_machine_subscriber.py --broker 192.168.1.100 --port 1883
+python3 simple_multi_machine_subscriber.py --broker 143.185.122.70 --port 1883
 
 # With authentication
-python3 simple_multi_machine_subscriber.py --broker 192.168.1.100 --username admin --password secret
+python3 simple_multi_machine_subscriber.py --broker 143.185.122.70 --username machine_status --password secret
 
 # Configure thresholds
 python3 simple_multi_machine_subscriber.py --offline-threshold 30 --update-interval 5
@@ -86,9 +86,9 @@ import simple_multi_machine_subscriber as monitor
 
 # Start monitoring machines
 subscriber = monitor.start_monitoring(
-    broker_address='192.168.1.100',
+    broker_address='143.185.122.70',
     broker_port=1883,
-    username='admin',
+    username='machine_status',
     password='secret',
     offline_threshold=30,
     update_interval=0  # Set to 0 to disable automatic console updates
@@ -203,10 +203,3 @@ If the subscriber is not receiving data:
    ```bash
    sudo journalctl -u machine-status-subscriber -f
    ```
-
-## Architecture
-
-```
-[Client Machines]    →    [MQTT Broker]    →    [Subscriber]    →    [PostgreSQL]    →    [Web Dashboard]
-    Publisher               (Mosquitto)         (Processes)          (Storage)           (Visualization)
-```
